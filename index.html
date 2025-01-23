@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Face Authentication</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Permissions-Policy" content="camera=*">
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            background: #f0f0f0;
+            font-family: Arial, sans-serif;
+        }
+        #video-container {
+            position: relative;
+            width: 100%;
+            max-width: 640px;
+            margin: 20px auto;
+        }
+        #video {
+            width: 100%;
+            height: auto;
+            border-radius: 10px;
+            transform: scaleX(-1);
+        }
+        #status {
+            margin-top: 20px;
+            padding: 10px;
+            border-radius: 5px;
+            text-align: center;
+            max-width: 80%;
+        }
+        .success {
+            background-color: #4CAF50;
+            color: white;
+        }
+        .error {
+            background-color: #f44336;
+            color: white;
+        }
+        #retry-button {
+            padding: 10px 20px;
+            font-size: 16px;
+            background-color: #2196F3;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 20px;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div id="video-container">
+        <video id="video" autoplay playsinline muted></video>
+    </div>
+    <div id="status"></div>
+    <button id="retry-button" onclick="retryCamera()">Retry Camera</button>
+
+    <script>
+        let video;
+        let stream;
+        let isCapturing = false;
+        let retryCount = 0;
+        const MAX_RETRIES = 3;
+        
+        // Function to check if running in WebView
+        function isWebView() {
+            return /WebView|iPhone|iPod|iPad|Android/.test(navigator.userAgent);
+        }
+
+        // Function to check camera support
+        async function checkCameraSupport() {
+            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                throw new Error('Camera API not supported');
+            }
+            
+            try {
+                const devices = await navigator.mediaDevices.enumerateDevices();
+                const cameras = devices.filter(device => device.kind === 'videoinput');
+                if (cameras.length === 0) {
+                    throw new Error('No cameras found');
+                }
+                return cameras;
+            } catch (err) {
+                console.error('Error checking cameras:', err);
+                return null;
+            }
+        }
+
+        // Function to get camera constraints based on device
+        function getCameraConstraints(preferredCamera = null) {
+            const constraints = {
+                audio: false,
+                video: {
+                    facingMode: "user",
+                    width: { ideal: 640 },
+                    height: { ideal: 480 }
+                }
+            };
+
+            if (preferredCamera) {
+                constraints.video.deviceId = { exact: preferredCamera.deviceId };
+            }
+
+            // Add specific constraints for mobile devices
+            if (/Android|iPhone|iPad|iPod/i.test(navigator.userAgent)) {
+                constraints.video.facingMode = { exact: "user" };
+            }
+
+            return constraints;
+        }
+
+        // Main camera initialization function
+        async function initCamera() {
+            try {
+                document.getElementById('status').textContent = 'Initializing camera...';
+                document.getElementById('retry-button').style.display = 'none';
+
+                // Check camera support
+                const cameras = await checkCameraSupport();
+                if (!cameras) {
+                    throw new Error('Unable to detect cameras');
+                }
+
+                // Try to get video element
+                video = document.getElementById('video');
+                if (!video) {
+                    throw new Error('Video element not found');
+                }
+
+                // Stop any existing streams
+                if (stream) {
+                    stream.getTracks().forEach(track => track.stop());
+                }
+
+                // Try to get camera access with different approaches
+                try {
+                    // First try: Default constraints
+                    stream = await navigator.mediaDevices.getUserMedia(getCameraConstraints());
+                } catch (err) {
+                    console.log('First attempt failed, trying fallback...', err);
+                    
+                    // Second try: Try each camera device specifically
+                    for (const camera of cameras) {
+                        try {
+                            stream = await navigator.mediaDevices.getUserMedia(
+                                getCameraConstraints(camera)
+                            );
+                            if (stream) break;
+                        } catch (e) {
+                            console.log(`Failed with camera ${camera.deviceId}`, e);
+                        }
+                    }
+                    
+                    if (!stream) {
+                        throw new Error('All camera attempts failed');
+                    }
+                }
+
+                // Set up video stream
+                video.srcObject = stream;
+                video.onloadedmetadata = () => {
+                    video.play()
+                        .then(() => {
+                            console.log('Video playback started');
+                            startCapturing();
+                        })
+                        .catch(err => {
+                            console.error('Video playback failed:', err);
+                            throw err;
+                        });
+                };
+
+                // Reset retry count on success
+                retryCount = 0;
+                
+            } catch (err) {
+                console.error('Camera initialization error:', err);
+                handleCameraError(err);
+            }
+        }
+
+        // Error handling function
+        function handleCameraError(err) {
+            let errorMessage = 'Camera initialization failed. ';
+            
+            if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+                errorMessage += 'Please allow camera access in your browser settings.';
+            } else if (err.name === 'NotFoundError') {
+                errorMessage += 'No camera detected.';
+            } else if (err.name === 'NotReadableError' || err.name === 'TrackStartError') {
+                errorMessage += 'Camera is in use by another application.';
+            } else {
+                errorMessage += err.message || 'Unknown error occurred.';
+            }
+
+            document.getElementById('status').textContent = errorMessage;
+            document.getElementById('status').className = 'error';
+            document.getElementById('retry-button').style.display = 'block';
+
+            // Automatic retry logic
+            if (retryCount < MAX_RETRIES) {
+                retryCount++;
+                setTimeout(initCamera, 2000);
+            }
+        }
+
+        // Retry button handler
+        function retryCamera() {
+            retryCount = 0;
+            initCamera();
+        }
+
+        async function captureFrame() {
+            if (!isCapturing) return;
+
+            try {
+                const canvas = document.createElement('canvas');
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(video, 0, 0);
+                
+                const imageData = canvas.toDataURL('image/jpeg', 0.8);
+                
+                const response = await fetch('/api/authenticate', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        image: imageData
+                    })
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    document.getElementById('status').textContent = result.message;
+                    document.getElementById('status').className = result.is_live ? 'success' : 'error';
+                    
+                    if (result.redirect) {
+                        stopCapturing();
+                        window.location.href = result.redirect;
+                    }
+                }
+            } catch (err) {
+                console.error('Error processing frame:', err);
+            }
+            
+            if (isCapturing) {
+                setTimeout(captureFrame, 500);
+            }
+        }
+
+        function startCapturing() {
+            isCapturing = true;
+            document.getElementById('status').textContent = 'Looking for face...';
+            captureFrame();
+        }
+
+        function stopCapturing() {
+            isCapturing = false;
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+            }
+        }
+
+        // Handle page visibility
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden) {
+                stopCapturing();
+            } else {
+                initCamera();
+            }
+        });
+
+        // Start camera when page loads
+        window.addEventListener('load', () => {
+            // Small delay to ensure everything is loaded
+            setTimeout(initCamera, 500);
+        });
+    </script>
+</body>
+</html>
+    
