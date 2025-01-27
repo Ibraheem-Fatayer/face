@@ -475,106 +475,106 @@ async function processFrame() {
         const { imageData, ovalData } = await captureFrame();
         debug.log('Frame captured successfully', { ovalData });
         
-        const response = await fetch('192.168.3.211:5000/api/authenticate', {
-            method: 'POST',
-            headers: { 
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ 
-                image: imageData, 
-                oval_guide: ovalData,
-                session_id: state.sessionId
-            })
-        });
+        // const response = await fetch('192.168.3.211:5000/api/authenticate', {
+        //     method: 'POST',
+        //     headers: { 
+        //         'Content-Type': 'application/json'
+        //     },
+        //     body: JSON.stringify({ 
+        //         image: imageData, 
+        //         oval_guide: ovalData,
+        //         session_id: state.sessionId
+        //     })
+        // });
 
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-        }
+        // if (!response.ok) {
+        //     throw new Error(`HTTP error! status: ${response.status}`);
+        // }
 
-        const result = await response.json();
-        debug.log('Raw API response:', result);
+        // const result = await response.json();
+        // debug.log('Raw API response:', result);
         
-        if (result.success) {
-            if (result.face_detected) {
-                // Create face rect if missing
-                if (!result.face_rect) {
-                    debug.log('Face detected but no face_rect provided, using estimated position');
-                    result.face_rect = {
-                        x: ovalData.x + ovalData.width * 0.25,
-                        y: ovalData.y + ovalData.height * 0.25,
-                        width: ovalData.width * 0.5,
-                        height: ovalData.height * 0.5
-                    };
-                }
+        // if (result.success) {
+        //     if (result.face_detected) {
+        //         // Create face rect if missing
+        //         if (!result.face_rect) {
+        //             debug.log('Face detected but no face_rect provided, using estimated position');
+        //             result.face_rect = {
+        //                 x: ovalData.x + ovalData.width * 0.25,
+        //                 y: ovalData.y + ovalData.height * 0.25,
+        //                 width: ovalData.width * 0.5,
+        //                 height: ovalData.height * 0.5
+        //             };
+        //         }
                 
-                debug.log('Face detected with rect:', result.face_rect);
-                const positionCheck = checkFacePosition(ovalData, result.face_rect);
-                debug.log('Position check result:', positionCheck);
+        //         debug.log('Face detected with rect:', result.face_rect);
+        //         const positionCheck = checkFacePosition(ovalData, result.face_rect);
+        //         debug.log('Position check result:', positionCheck);
                 
-                if (positionCheck.isValid) {
-                    // Check if we need to move closer or further based on the message
-                    if (result.message && result.message.toLowerCase().includes('closer')) {
-                        state.framesCollected = 0;
-                        await updateUI(AUTH_STATE.WAITING, 'Move closer to the camera');
-                        debug.log('Need to move closer');
-                    } else if (result.message && result.message.toLowerCase().includes('further')) {
-                        state.framesCollected = 0;
-                        await updateUI(AUTH_STATE.WAITING, 'Move further from the camera');
-                        debug.log('Need to move further');
-                    } else {
-                        // Position is good, check liveness
-                        const confidence = parseFloat(result.confidence) || 0;
-                        debug.log('Checking liveness', { confidence, required: CONFIG.MIN_LIVENESS_CONFIDENCE });
+        //         if (positionCheck.isValid) {
+        //             // Check if we need to move closer or further based on the message
+        //             if (result.message && result.message.toLowerCase().includes('closer')) {
+        //                 state.framesCollected = 0;
+        //                 await updateUI(AUTH_STATE.WAITING, 'Move closer to the camera');
+        //                 debug.log('Need to move closer');
+        //             } else if (result.message && result.message.toLowerCase().includes('further')) {
+        //                 state.framesCollected = 0;
+        //                 await updateUI(AUTH_STATE.WAITING, 'Move further from the camera');
+        //                 debug.log('Need to move further');
+        //             } else {
+        //                 // Position is good, check liveness
+        //                 const confidence = parseFloat(result.confidence) || 0;
+        //                 debug.log('Checking liveness', { confidence, required: CONFIG.MIN_LIVENESS_CONFIDENCE });
                         
-                        if (confidence >= CONFIG.MIN_LIVENESS_CONFIDENCE) {
-                            state.framesCollected++;
-                            debug.log('Valid frame collected', { 
-                                framesCollected: state.framesCollected,
-                                confidence,
-                                required: CONFIG.FRAMES_REQUIRED
-                            });
+        //                 if (confidence >= CONFIG.MIN_LIVENESS_CONFIDENCE) {
+        //                     state.framesCollected++;
+        //                     debug.log('Valid frame collected', { 
+        //                         framesCollected: state.framesCollected,
+        //                         confidence,
+        //                         required: CONFIG.FRAMES_REQUIRED
+        //                     });
                             
-                            if (state.framesCollected >= CONFIG.FRAMES_REQUIRED) {
-                                if (result.recognized_name) {
-                                    await handleSuccessfulAuthentication(result.recognized_name);
-                                    return;
-                                } else {
-                                    await updateUI(AUTH_STATE.ERROR, 'Face not recognized');
-                                    state.framesCollected = 0;
-                                }
-                            } else {
-                                await updateUI(AUTH_STATE.ANALYZING, 'Verifying...', 
-                                    `Keep still (${state.framesCollected}/${CONFIG.FRAMES_REQUIRED})`);
-                            }
-                        } else {
-                            state.framesCollected = 0;
-                            await updateUI(AUTH_STATE.WAITING, 'Keep your face still');
-                            debug.log('Liveness check failed', { confidence });
-                        }
-                    }
-                } else {
-                    state.framesCollected = 0;
-                    await updateUI(AUTH_STATE.WAITING, positionCheck.message);
-                }
-            } else {
-                state.framesCollected = 0;
-                await updateUI(AUTH_STATE.WAITING, 'Position your face in the oval');
-                debug.log('No face detected in frame');
-            }
-        } else {
-            debug.error('API returned error', result);
-            state.framesCollected = 0;
-            await updateUI(AUTH_STATE.ERROR, result.message || 'Error processing frame');
-        }
+        //                     if (state.framesCollected >= CONFIG.FRAMES_REQUIRED) {
+        //                         if (result.recognized_name) {
+        //                             await handleSuccessfulAuthentication(result.recognized_name);
+        //                             return;
+        //                         } else {
+        //                             await updateUI(AUTH_STATE.ERROR, 'Face not recognized');
+        //                             state.framesCollected = 0;
+        //                         }
+        //                     } else {
+        //                         await updateUI(AUTH_STATE.ANALYZING, 'Verifying...', 
+        //                             `Keep still (${state.framesCollected}/${CONFIG.FRAMES_REQUIRED})`);
+        //                     }
+        //                 } else {
+        //                     state.framesCollected = 0;
+        //                     await updateUI(AUTH_STATE.WAITING, 'Keep your face still');
+        //                     debug.log('Liveness check failed', { confidence });
+        //                 }
+        //             }
+        //         } else {
+        //             state.framesCollected = 0;
+        //             await updateUI(AUTH_STATE.WAITING, positionCheck.message);
+        //         }
+        //     } else {
+        //         state.framesCollected = 0;
+        //         await updateUI(AUTH_STATE.WAITING, 'Position your face in the oval');
+        //         debug.log('No face detected in frame');
+        //     }
+        // } else {
+        //     debug.error('API returned error', result);
+        //     state.framesCollected = 0;
+        //     await updateUI(AUTH_STATE.ERROR, result.message || 'Error processing frame');
+        // }
 
-        state.lastProcessedTime = currentTime;
-        state.isProcessing = false;
+        // state.lastProcessedTime = currentTime;
+        // state.isProcessing = false;
 
-        if (state.isRunning && 
-            state.currentState !== AUTH_STATE.AUTHENTICATED && 
-            state.framesCollected < CONFIG.FRAMES_REQUIRED) {
-            setTimeout(() => requestAnimationFrame(processFrame), CONFIG.MIN_FRAME_INTERVAL);
-        }
+        // if (state.isRunning && 
+        //     state.currentState !== AUTH_STATE.AUTHENTICATED && 
+        //     state.framesCollected < CONFIG.FRAMES_REQUIRED) {
+        //     setTimeout(() => requestAnimationFrame(processFrame), CONFIG.MIN_FRAME_INTERVAL);
+        // }
 
     } catch (error) {
         debug.error('Frame processing error:', error);
